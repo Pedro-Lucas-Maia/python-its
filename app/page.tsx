@@ -9,6 +9,9 @@ export default function HomePage() {
         <div className="text-xl font-bold tracking-tight">ITS IMD UFRN</div>
         <div className="flex gap-4 items-center">
           <ThemeToggle />
+          <Link href="/sobre" className="text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors hidden sm:block">
+            Como Funciona
+          </Link>
           <Link href="/login" className="text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors">
             Entrar
           </Link>
