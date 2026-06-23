@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { logout } from "@/app/actions/auth";
 
@@ -13,6 +14,9 @@ export default function DashboardLayout({
           <div className="font-bold tracking-tight text-lg">ITS IMD UFRN</div>
           <div className="flex items-center gap-4">
             <ThemeToggle />
+            <Link href="/sobre" className="text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors hidden sm:block">
+              Como Funciona
+            </Link>
             <form action={logout}>
               <button type="submit" className="text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors">
                 Sair

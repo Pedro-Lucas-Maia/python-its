@@ -13,13 +13,25 @@ const LessonContentSchema = z.object({
   respostaCorretaIndex: z.number().describe("Índice (0, 1, 2 ou 3) da opção correta dentro do array de alternativas.")
 });
 
+const FINAL_CHALLENGE_THRESHOLD = 75;
+const PROGRESS_INCREMENT = 25;
+
 export async function getOrGenerateLesson(moduleId: string) {
   const cookieStore = await cookies();
   const supabase = createClient(cookieStore);
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Unauthorized");
+
+  // Fetch current progress to determine if this is a final challenge
+  const { data: progressData } = await supabase
+    .from("user_progress")
+    .select("understanding_percentage")
+    .eq("user_id", user.id)
+    .eq("module_id", moduleId)
+    .single();
+
+  const currentPct = progressData?.understanding_percentage ?? 0;
+  const isFinalChallenge = currentPct >= FINAL_CHALLENGE_THRESHOLD;
 
   // Verificar se já existe uma interação pendente (gerada mas não respondida)
   const { data: pending } = await supabase
@@ -33,11 +45,9 @@ export async function getOrGenerateLesson(moduleId: string) {
     .single();
 
   if (pending) {
-    return { interactionId: pending.id, content: pending.generated_content };
+    return { interactionId: pending.id, content: pending.generated_content, isFinalChallenge };
   }
 
-  // Pegar o módulo do banco para entender o contexto.
-  // (Lembre-se: mock no banco se ele ainda não estiver populado para testes)
   const { data: moduleData } = await supabase
     .from("modules")
     .select("*")
@@ -46,7 +56,6 @@ export async function getOrGenerateLesson(moduleId: string) {
   const moduleTitle = moduleData?.title || "Python (Conceito Desconhecido)";
   const moduleDesc = moduleData?.description || "Aprenda os fundamentos";
 
-  // Pegar o histórico recente do aluno neste módulo
   const { data: history } = await supabase
     .from("interactions")
     .select("generated_content, user_answer, is_correct")
@@ -54,22 +63,29 @@ export async function getOrGenerateLesson(moduleId: string) {
     .eq("module_id", moduleId)
     .not("user_answer", "is", null)
     .order("created_at", { ascending: true })
-    .limit(10); // Últimas 10 interações para manter o contexto sem estourar tokens
+    .limit(10);
 
   let prompt = `Você é o tutor inteligente da IMD UFRN, ensinando Python para iniciantes de forma clean e gamificada. Crie o próximo desafio do módulo: "${moduleTitle}" (${moduleDesc}).\n\n`;
 
+  if (isFinalChallenge) {
+    prompt += `🏆 DESAFIO FINAL: O aluno atingiu ${currentPct}% de domínio e está na etapa final do módulo "${moduleTitle}". Esta é a questão de avaliação definitiva. A "introducao" deve apresentar um cenário ou problema prático que engloba o conteúdo completo do módulo. A questão deve ser de síntese — mais elaborada e desafiadora que as anteriores, exigindo que o aluno conecte os conceitos aprendidos.\n\n`;
+  }
+
   if (history && history.length > 0) {
     const lastInteraction = history[history.length - 1];
-    
-    prompt += `Abaixo está o histórico do que o aluno já respondeu neste módulo até agora:\n`;
+
+    prompt += `Histórico do aluno neste módulo:\n`;
     history.forEach((h, i) => {
-      // Ignorar dados corrompidos caso o JSON tenha faltado a propriedade pergunta
       const p = (h.generated_content as any)?.pergunta || "Pergunta desconhecida";
       prompt += `[Questão ${i + 1}]: ${p}\n- Resposta do aluno: "${h.user_answer}" (${h.is_correct ? 'ACERTOU' : 'ERROU'})\n\n`;
     });
-    
+
     if (lastInteraction.is_correct) {
-      prompt += `O aluno ACERTOU a última pergunta! Evolua o nível. NÃO repita as perguntas acima. Crie uma nova pergunta cobrindo o próximo passo lógico dentro de "${moduleTitle}". Aumente levemente a dificuldade ou traga uma situação prática nova.`;
+      if (isFinalChallenge) {
+        prompt += `O aluno demonstrou domínio consistente. Crie a questão de síntese do DESAFIO FINAL. NÃO repita questões anteriores.`;
+      } else {
+        prompt += `O aluno ACERTOU a última pergunta! Evolua o nível. NÃO repita as perguntas acima. Crie uma nova pergunta cobrindo o próximo passo lógico dentro de "${moduleTitle}". Aumente levemente a dificuldade ou traga uma situação prática nova.`;
+      }
     } else {
       prompt += `ATENÇÃO: O aluno ERROU a última pergunta! Seja extremamente gentil na "introducao". Explique rapidamente por que a resposta "${lastInteraction.user_answer}" está errada e ensine o jeito certo. Depois, crie uma NOVA pergunta (diferente da anterior) para testar o mesmo conceito de um ângulo mais simples para garantir o aprendizado.`;
     }
@@ -80,10 +96,9 @@ export async function getOrGenerateLesson(moduleId: string) {
   const { object } = await generateObject({
     model: google("gemini-2.5-flash-lite"),
     schema: LessonContentSchema,
-    prompt: prompt,
+    prompt,
   });
 
-  // Salvar a nova interação no DB
   const { data: newInteraction, error: insertError } = await supabase
     .from("interactions")
     .insert({
@@ -99,15 +114,13 @@ export async function getOrGenerateLesson(moduleId: string) {
     throw new Error(`Failed to save interaction: ${insertError.message} (Code: ${insertError.code})`);
   }
 
-  return { interactionId: newInteraction.id, content: object };
+  return { interactionId: newInteraction.id, content: object, isFinalChallenge };
 }
 
 export async function submitAnswer(interactionId: string, answerIndex: number) {
   const cookieStore = await cookies();
   const supabase = createClient(cookieStore);
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Unauthorized");
 
   const { data: interaction } = await supabase
@@ -118,56 +131,73 @@ export async function submitAnswer(interactionId: string, answerIndex: number) {
   if (!interaction || interaction.user_id !== user.id)
     throw new Error("Invalid interaction");
 
-  const isCorrect =
-    answerIndex === interaction.generated_content.respostaCorretaIndex;
-  const userAnswerText =
-    interaction.generated_content.alternativas[answerIndex];
+  const isCorrect = answerIndex === interaction.generated_content.respostaCorretaIndex;
+  const userAnswerText = interaction.generated_content.alternativas[answerIndex];
 
   await supabase
     .from("interactions")
     .update({ user_answer: userAnswerText, is_correct: isCorrect })
     .eq("id", interactionId);
 
-  // Regra de progresso simples: acertos somam % até chegar em 100
-  if (isCorrect) {
-    let { data: progress } = await supabase
-      .from("user_progress")
-      .select("*")
-      .eq("user_id", user.id)
-      .eq("module_id", interaction.module_id)
-      .single();
+  let { data: progress } = await supabase
+    .from("user_progress")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("module_id", interaction.module_id)
+    .single();
 
-    if (!progress) {
-      const { data: newProg } = await supabase
-        .from("user_progress")
-        .insert({
-          user_id: user.id,
-          module_id: interaction.module_id,
-          understanding_percentage: 25,
-          is_completed: false,
-        })
-        .select()
-        .single();
-      progress = newProg;
-    } else {
-      const newPct = Math.min(progress.understanding_percentage + 25, 100);
-      await supabase
-        .from("user_progress")
-        .update({
-          understanding_percentage: newPct,
-          is_completed: newPct === 100,
-        })
-        .eq("id", progress.id);
-      progress.understanding_percentage = newPct;
-      progress.is_completed = newPct === 100;
-    }
+  // Primeira interação com este módulo: criar registro de progresso
+  if (!progress) {
+    const initialPct = isCorrect ? PROGRESS_INCREMENT : 0;
+    const { data: newProg } = await supabase
+      .from("user_progress")
+      .insert({
+        user_id: user.id,
+        module_id: interaction.module_id,
+        understanding_percentage: initialPct,
+        is_completed: false,
+      })
+      .select()
+      .single();
+    progress = newProg;
 
     return {
-      isCorrect: true,
-      progress: progress.understanding_percentage,
-      isCompleted: progress.is_completed,
+      isCorrect,
+      progress: initialPct,
+      isCompleted: false,
+      isFinalChallenge: false,
     };
-  } else {
-    return { isCorrect: false, progress: 0, isCompleted: false };
   }
+
+  const currentPct = progress.understanding_percentage;
+  const isFinalChallenge = currentPct >= FINAL_CHALLENGE_THRESHOLD;
+
+  let newPct: number;
+  let isCompleted = false;
+
+  if (isCorrect) {
+    if (isFinalChallenge) {
+      // Passou no desafio final: módulo concluído
+      newPct = 100;
+      isCompleted = true;
+    } else {
+      // Progresso normal: +25%, mas não ultrapassa o threshold sem o desafio final
+      newPct = Math.min(currentPct + PROGRESS_INCREMENT, FINAL_CHALLENGE_THRESHOLD);
+    }
+  } else {
+    if (isFinalChallenge) {
+      // Falhou no desafio final: volta abaixo do threshold para forçar revisão
+      newPct = FINAL_CHALLENGE_THRESHOLD - PROGRESS_INCREMENT;
+    } else {
+      // Erro normal: decrementa (mínimo 0%)
+      newPct = Math.max(currentPct - PROGRESS_INCREMENT, 0);
+    }
+  }
+
+  await supabase
+    .from("user_progress")
+    .update({ understanding_percentage: newPct, is_completed: isCompleted })
+    .eq("id", progress.id);
+
+  return { isCorrect, progress: newPct, isCompleted, isFinalChallenge };
 }
