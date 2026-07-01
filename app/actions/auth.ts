@@ -32,7 +32,9 @@ export async function login(formData: FormData) {
   });
 
   if (error) {
-    return redirect(`/login?error=${encodeURIComponent(getLoginErrorMessage(error.message))}`);
+    return redirect(
+      `/login?error=${encodeURIComponent(getLoginErrorMessage(error.message))}`,
+    );
   }
 
   revalidatePath("/", "layout");
@@ -54,15 +56,17 @@ export async function signup(formData: FormData) {
       data: {
         full_name: fullName,
       },
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/auth/confirm`,
-    }
+      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/auth/confirm`,
+    },
   });
 
   if (error) {
-    return redirect(`/register?error=${encodeURIComponent('Erro ao criar usuário: ' + error.message)}`);
+    return redirect(
+      `/register?error=${encodeURIComponent("Erro ao criar usuário: " + error.message)}`,
+    );
   }
 
-  redirect("/login?message=Verifique seu email para confirmar o cadastro.");
+  redirect("/login?message=Faça login para continuar!");
 }
 
 export async function logout() {
@@ -71,4 +75,3 @@ export async function logout() {
   await supabase.auth.signOut();
   redirect("/login");
 }
-

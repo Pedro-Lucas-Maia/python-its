@@ -1,5 +1,6 @@
 import { signup } from "@/app/actions/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SubmitButton } from "@/components/submit-button";
 import Link from "next/link";
 
 export default async function RegisterPage({
@@ -69,9 +70,9 @@ export default async function RegisterPage({
             />
           </div>
 
-          <button className="mt-2 w-full bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 rounded-xl py-3.5 font-medium hover:bg-neutral-800 dark:hover:bg-neutral-100 active:scale-[0.98] transition-all" type="submit">
+          <SubmitButton className="mt-2 w-full bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 rounded-xl py-3.5 font-medium hover:bg-neutral-800 dark:hover:bg-neutral-100 active:scale-[0.98] transition-all" loadingText="Criando conta...">
             Criar conta
-          </button>
+          </SubmitButton>
         </form>
 
         <div className="mt-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
