@@ -5,6 +5,20 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { cookies } from "next/headers";
 
+function getLoginErrorMessage(message: string) {
+  const normalizedMessage = message.toLowerCase();
+
+  if (normalizedMessage.includes("email not confirmed")) {
+    return "Confirme seu email antes de entrar.";
+  }
+
+  if (normalizedMessage.includes("invalid login credentials")) {
+    return "Email ou senha invalidos.";
+  }
+
+  return `Erro ao entrar: ${message}`;
+}
+
 export async function login(formData: FormData) {
   const cookieStore = await cookies();
   const supabase = createClient(cookieStore);
@@ -18,7 +32,7 @@ export async function login(formData: FormData) {
   });
 
   if (error) {
-    return redirect("/login?error=Could not authenticate user");
+    return redirect(`/login?error=${encodeURIComponent(getLoginErrorMessage(error.message))}`);
   }
 
   revalidatePath("/", "layout");

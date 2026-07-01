@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { createClient } from "@/utils/supabase/server";
 
 export const metadata = {
   title: "Como Funciona — ITS IMD UFRN",
@@ -64,28 +66,49 @@ function RuleRow({ condition, action }: { condition: string; action: string }) {
   );
 }
 
-export default function SobrePage() {
+export default async function SobrePage() {
+  const cookieStore = await cookies();
+  const supabase = createClient(cookieStore);
+  const { data: { user } } = await supabase.auth.getUser();
+  const isLoggedIn = !!user;
+
+  // Destino do link "logo" e do CTA muda conforme o estado de autenticação,
+  // para que um aluno logado que abra "Como Funciona" continue logado e
+  // tenha um caminho claro de volta ao dashboard.
+  const homeHref = isLoggedIn ? "/dashboard" : "/";
+
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 font-sans text-neutral-900 dark:text-neutral-100 selection:bg-neutral-200 dark:selection:bg-neutral-800 flex flex-col transition-colors duration-300">
       {/* Nav */}
       <nav className="flex items-center justify-between p-6 max-w-6xl mx-auto w-full">
-        <Link href="/" className="text-xl font-bold tracking-tight">
+        <Link href={homeHref} className="text-xl font-bold tracking-tight">
           ITS IMD UFRN
         </Link>
         <div className="flex gap-4 items-center">
           <ThemeToggle />
-          <Link
-            href="/login"
-            className="text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
-          >
-            Entrar
-          </Link>
-          <Link
-            href="/register"
-            className="text-sm font-medium bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 px-4 py-2 rounded-lg hover:bg-neutral-800 dark:hover:bg-neutral-100 transition-all"
-          >
-            Cadastrar
-          </Link>
+          {isLoggedIn ? (
+            <Link
+              href="/dashboard"
+              className="text-sm font-medium bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 px-4 py-2 rounded-lg hover:bg-neutral-800 dark:hover:bg-neutral-100 transition-all"
+            >
+              Voltar ao Dashboard
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
+              >
+                Entrar
+              </Link>
+              <Link
+                href="/register"
+                className="text-sm font-medium bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 px-4 py-2 rounded-lg hover:bg-neutral-800 dark:hover:bg-neutral-100 transition-all"
+              >
+                Cadastrar
+              </Link>
+            </>
+          )}
         </div>
       </nav>
 
@@ -396,26 +419,45 @@ export default function SobrePage() {
 
         {/* ── CTA ── */}
         <section className="flex flex-col items-center text-center gap-6 py-8 border-t border-neutral-200 dark:border-neutral-800">
-          <h2 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
-            Pronto para experimentar?
-          </h2>
-          <p className="text-neutral-500 dark:text-neutral-400 max-w-md">
-            Crie sua conta e comece sua jornada de aprendizado adaptativo em Python agora mesmo.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Link
-              href="/register"
-              className="inline-flex justify-center items-center px-6 py-3 text-sm font-medium text-white dark:text-neutral-900 bg-neutral-900 dark:bg-white rounded-xl hover:bg-neutral-800 dark:hover:bg-neutral-100 active:scale-[0.98] transition-all"
-            >
-              Criar conta grátis
-            </Link>
-            <Link
-              href="/"
-              className="inline-flex justify-center items-center px-6 py-3 text-sm font-medium text-neutral-900 dark:text-white bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-800 active:scale-[0.98] transition-all"
-            >
-              Voltar ao início
-            </Link>
-          </div>
+          {isLoggedIn ? (
+            <>
+              <h2 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
+                Pronto para continuar?
+              </h2>
+              <p className="text-neutral-500 dark:text-neutral-400 max-w-md">
+                Volte ao seu roadmap e continue sua jornada de aprendizado adaptativo em Python.
+              </p>
+              <Link
+                href="/dashboard"
+                className="inline-flex justify-center items-center px-6 py-3 text-sm font-medium text-white dark:text-neutral-900 bg-neutral-900 dark:bg-white rounded-xl hover:bg-neutral-800 dark:hover:bg-neutral-100 active:scale-[0.98] transition-all"
+              >
+                Voltar ao Dashboard
+              </Link>
+            </>
+          ) : (
+            <>
+              <h2 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
+                Pronto para experimentar?
+              </h2>
+              <p className="text-neutral-500 dark:text-neutral-400 max-w-md">
+                Crie sua conta e comece sua jornada de aprendizado adaptativo em Python agora mesmo.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Link
+                  href="/register"
+                  className="inline-flex justify-center items-center px-6 py-3 text-sm font-medium text-white dark:text-neutral-900 bg-neutral-900 dark:bg-white rounded-xl hover:bg-neutral-800 dark:hover:bg-neutral-100 active:scale-[0.98] transition-all"
+                >
+                  Criar conta grátis
+                </Link>
+                <Link
+                  href="/"
+                  className="inline-flex justify-center items-center px-6 py-3 text-sm font-medium text-neutral-900 dark:text-white bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-800 active:scale-[0.98] transition-all"
+                >
+                  Voltar ao início
+                </Link>
+              </div>
+            </>
+          )}
         </section>
       </main>
 

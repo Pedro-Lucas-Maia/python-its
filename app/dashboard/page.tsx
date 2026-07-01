@@ -4,8 +4,37 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Check, Lock, Play } from "lucide-react";
 import { SeedModulesButton } from "./SeedModulesButton";
+import { DashboardStats } from "./DashboardStats";
 
 export const dynamic = "force-dynamic";
+
+// Conta dias-calendário consecutivos com atividade, terminando em hoje.
+// Se o aluno ainda não praticou hoje mas praticou ontem, a sequência
+// continua válida (só quebra depois de um dia inteiro sem atividade).
+function computeStreak(timestamps: (string | null)[]): number {
+  const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+
+  const activeDays = new Set(
+    timestamps
+      .filter((t): t is string => !!t)
+      .map((t) => dayKey(new Date(t)))
+  );
+  if (activeDays.size === 0) return 0;
+
+  const cursor = new Date();
+  // Tolera o dia de hoje ainda "em branco" começando a contagem por ontem.
+  if (!activeDays.has(dayKey(cursor))) {
+    cursor.setDate(cursor.getDate() - 1);
+    if (!activeDays.has(dayKey(cursor))) return 0;
+  }
+
+  let streak = 0;
+  while (activeDays.has(dayKey(cursor))) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
 
 export default async function DashboardPage() {
   const cookieStore = await cookies();
@@ -32,6 +61,20 @@ export default async function DashboardPage() {
     .from("user_progress")
     .select("*")
     .eq("user_id", user.id);
+
+  // Respostas registradas (para os KPIs de taxa de acertos e sistema de níveis)
+  const { data: interactions } = await supabase
+    .from("interactions")
+    .select("is_correct, created_at")
+    .eq("user_id", user.id)
+    .not("user_answer", "is", null);
+
+  const answeredCount = interactions?.length ?? 0;
+  const correctAnswers = interactions?.filter((i) => i.is_correct).length ?? 0;
+  const completedModules = progress?.filter((p) => p.is_completed).length ?? 0;
+
+  // Sequência de dias consecutivos com atividade (o "foguinho")
+  const streakDays = computeStreak(interactions?.map((i) => i.created_at) ?? []);
 
   const metaName = user?.user_metadata?.full_name;
   const dbName = profile?.full_name;
@@ -93,8 +136,12 @@ export default async function DashboardPage() {
     return { ...mod, progress: userProg, status };
   });
 
-  // Identificar clusters para mostrar separadores visuais
-  const clusterBreakIndex = dbModules.findIndex((m) => m.order_index === 5);
+  // Domínio médio no currículo (módulos sem progresso contam como 0%)
+  const totalMasteryPct = dbModules.reduce((sum, mod) => {
+    const p = progress?.find((pr) => pr.module_id === mod.id);
+    return sum + (p?.understanding_percentage ?? 0);
+  }, 0);
+  const averageMastery = dbModules.length > 0 ? Math.round(totalMasteryPct / dbModules.length) : 0;
 
   return (
     <div className="flex flex-col gap-12 animate-fade-in">
@@ -106,6 +153,19 @@ export default async function DashboardPage() {
           Continue sua jornada de aprendizado em Python.
         </p>
       </header>
+
+      <DashboardStats
+        correctAnswers={correctAnswers}
+        answeredCount={answeredCount}
+        completedModules={completedModules}
+        totalModules={dbModules.length}
+        averageMastery={averageMastery}
+        streakDays={streakDays}
+      />
+
+      <h2 className="text-xs font-semibold uppercase tracking-widest text-neutral-400 dark:text-neutral-500 -mb-6">
+        Seu roadmap
+      </h2>
 
       <div className="relative border-l-2 border-neutral-200 dark:border-neutral-800 ml-4 md:ml-8 flex flex-col gap-8 pb-12">
         {roadmap.map((item, index) => {
